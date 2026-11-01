@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Column, ForeignKey, Integer, String, Boolean
+from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 
@@ -12,7 +13,8 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     disabled = Column(Boolean, default=False)
     refresh_token = Column(String, nullable=True)
-
+    role_id = Column(Integer, ForeignKey("roles.id"), nullable=False, default=1)
+    role = relationship("Role")
 
 class Role(Base):
     __tablename__ = "roles"
@@ -20,6 +22,8 @@ class Role(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True, nullable=False)
     description = Column(String, nullable=True)
+
+    users = relationship("User", back_populates="role")
 
 class Permission(Base):
     __tablename__ = "permissions"

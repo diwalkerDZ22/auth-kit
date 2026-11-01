@@ -1,5 +1,8 @@
-from sqlalchemy import Column, ForeignKey, Integer, String, Boolean
+from sqlalchemy import (
+    Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, String, false, func,
+)
 from sqlalchemy.orm import relationship
+
 from app.db.base import Base
 
 
@@ -62,3 +65,22 @@ class RolePermission(Base):
     permission_id = Column(
         Integer, ForeignKey("permissions.id", ondelete="CASCADE"), primary_key=True
     )
+
+
+class EmailVerification(Base):
+    __tablename__ = "email_verifications"
+    __table_args__ = (
+        CheckConstraint("purpose IN ('signup', 'login')", name="ck_email_verifications_purpose"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    purpose = Column(String(16), nullable=False)
+    token_hash = Column(String(64), unique=True, index=True, nullable=False)  # sha256 hex = 64 car.
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    user = relationship("User", back_populates="email_verifications")

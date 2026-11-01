@@ -37,5 +37,6 @@ class UserOut(BaseModel):
     full_name: str | None = None
     disabled: bool
     role_id: int  # Ajout du champ role_id pour inclure le rôle de l'utilisateur dans la réponse
+    is_verified: bool  # Ajout du champ is_verified pour indiquer si l'utilisateur a vérifié son email
 
     model_config = {"from_attributes": True}  # replaces orm_mode en Pydantic v2

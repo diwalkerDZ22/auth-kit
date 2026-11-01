@@ -10,3 +10,5 @@ python-multipart
 pydantic-settings
 email-validator
 alembic
+resend
+slowapi

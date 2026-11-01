@@ -13,8 +13,17 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     disabled = Column(Boolean, default=False)
     refresh_token = Column(String, nullable=True)
+    
     role_id = Column(Integer, ForeignKey("roles.id"), nullable=False)
     role = relationship("Role", back_populates="users",lazy="joined")  # Utilisation de lazy="joined" pour charger le rôle en même temps que l'utilisateur
+    
+    is_verified = Column(Boolean, default=False, nullable=False)
+    email_verifications = relationship(
+        "EmailVerification",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 class Role(Base):
     __tablename__ = "roles"

@@ -3,10 +3,14 @@ from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from app.core.config import settings
 
 _connect_args = {}
-if settings.DATABASE_URL.startswith("postgresql"):
+database_url = settings.DATABASE_URL
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    _connect_args["sslmode"] = "require"
+elif database_url.startswith("postgresql+"):
     _connect_args["sslmode"] = "require"
 
-engine = create_engine(settings.DATABASE_URL, connect_args=_connect_args)
+engine = create_engine(database_url, connect_args=_connect_args)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

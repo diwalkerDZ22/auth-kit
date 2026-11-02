@@ -4,13 +4,13 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str
-    SECRET_KEY: str
+    DATABASE_URL: str = "sqlite:///./auth.db"
+    SECRET_KEY: str = "dev-only-change-this-secret"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    resend_api_key: str
+    resend_api_key: str = ""
     mail_from: str = "onboarding@resend.dev"
     mail_from_name: str = "FakeJob Auth"
     frontend_verify_url: str = "http://127.0.0.1:8000/auth/verify"

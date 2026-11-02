@@ -20,6 +20,10 @@ class TokenPair(BaseModel):
 class RefreshRequest(BaseModel):
     refresh_token: str
 
+
+class VerifyRequest(BaseModel):
+    token: str
+
 # --- User ---
 
 class UserCreate(BaseModel):

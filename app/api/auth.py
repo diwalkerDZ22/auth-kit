@@ -1,13 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordRequestForm
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from datetime import timedelta
-
+from fastapi import HTTPException
 from app.core.config import settings
 from app.core.security import create_access_token, decode_access_token, create_refresh_token
+from app.core.email import send_verification_email
+from app.core.verification import create_verification_link
 from app.crud.user import authenticate_user, create_user, get_user_by_username, get_user_by_email, save_refresh_token, revoke_refresh_token
 from app.db.base import get_db
-from app.schemas.user import Token, TokenData, UserCreate, UserOut, TokenPair, RefreshRequest 
+from app.schemas.user import Token, TokenData, UserCreate, UserOut, TokenPair, RefreshRequest, VerifyRequest
+from datetime import datetime, timezone
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+from app.core.verification import hash_token
+from app.db.models import EmailVerification
+from app.schemas.user import VerifyRequest  # le schéma avec le champ `token: str`
 
 router = APIRouter()
 
@@ -47,15 +57,101 @@ def get_current_active_user(current_user=Depends(get_current_user)):
 
 # --- Routes ---
 
+from fastapi import BackgroundTasks
+from sqlalchemy.exc import IntegrityError
+
+from app.core.email import send_verification_email
+from app.core.verification import create_verification_link
+
+
 @router.post("/register", response_model=UserOut, status_code=201)
-def register(user_in: UserCreate, db: Session = Depends(get_db)):
+def register(
+    user_in: UserCreate,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     if get_user_by_username(db, user_in.username):
         raise HTTPException(status_code=400, detail="Username already taken")
-    if get_user_by_email(db, user_in.email):
+    if get_user_by_email(db, user_in.email.lower()):
         raise HTTPException(status_code=400, detail="Email already registered")
-    return create_user(db, user_in)
+
+    try:
+        user = create_user(db, user_in)
+    except IntegrityError:  # deux inscriptions simultanées avec le même username/email
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Username or email already registered")
+
+    link = create_verification_link(db, user, "signup")
+    background.add_task(send_verification_email, user.email, link, "signup")
+
+    return user
 
 
+@router.post("/verify")
+def verify(payload: VerifyRequest, db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+
+    # 1-2. Hasher puis chercher une ligne valide
+    v = (
+        db.query(EmailVerification)
+        .filter(
+            EmailVerification.token_hash == hash_token(payload.token),
+            EmailVerification.used_at.is_(None),
+            EmailVerification.expires_at > now,
+        )
+        .with_for_update()
+        .first()
+    )
+    if not v:
+        raise HTTPException(400, "Lien invalide ou expiré")
+
+    user = v.user
+
+    # 3. Marquer comme utilisé
+    v.used_at = now
+
+    # 4. Signup : on active le compte, aucun JWT
+    if v.purpose == "signup":
+        user.is_verified = True
+        db.commit()
+        return {"detail": "Email vérifié, vous pouvez vous connecter."}
+
+    # 5. Login : contrôle puis émission des tokens
+    if not user.is_verified or user.disabled:
+        db.commit()  # le token reste consommé
+        raise HTTPException(403, "Compte non vérifié ou désactivé")
+
+    access = create_access_token(user.username)
+    refresh = create_refresh_token(user.username)
+    user.refresh_token = refresh
+    db.commit()
+    return {"access_token": access, "refresh_token": refresh, "token_type": "bearer"}
+
+VERIFY_PAGE = """<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>Vérification</title></head>
+<body style="font-family:sans-serif;max-width:420px;margin:60px auto">
+  <h2>Confirmer votre email</h2>
+  <button id="btn">Confirmer</button>
+  <p id="msg"></p>
+  <script>
+    const token = new URLSearchParams(location.search).get("token");
+    history.replaceState(null, "", location.pathname);  // retire le token de la barre d'adresse
+    document.getElementById("btn").onclick = async () => {
+      const r = await fetch("/auth/verify", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({token}),
+      });
+      const data = await r.json();
+      document.getElementById("msg").textContent = data.detail || "Connexion réussie.";
+    };
+  </script>
+</body></html>"""
+
+
+@router.get("/verify", include_in_schema=False)
+def verify_page():
+    return HTMLResponse(VERIFY_PAGE)
 
 @router.post("/token", response_model=TokenPair)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):

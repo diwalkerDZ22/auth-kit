@@ -8,6 +8,10 @@ logger = logging.getLogger(__name__)
 resend.api_key = settings.resend_api_key
 
 def send_verification_email(to: str, verify_url: str, purpose: str) -> bool:
+    if not settings.resend_api_key.strip():
+        logger.error("Envoi impossible: resend_api_key n'est pas configurée dans le fichier .env")
+        return False
+
     if purpose == "login":
         subject = "Confirmez cette connexion"
         intro = "Une connexion a été demandée. Cliquez pour continuer :"

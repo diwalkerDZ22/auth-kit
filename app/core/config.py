@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     frontend_verify_url: str = "http://127.0.0.1:8000/auth/verify"
     signup_token_expire_hours: int = 24
     login_token_expire_minutes: int = 15
+    LOGIN_EMAIL_REQUIRED: bool = True
     
     class Config:
         env_file = ".env"

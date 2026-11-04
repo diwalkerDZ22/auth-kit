@@ -16,8 +16,12 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.core.verification import hash_token
-from app.db.models import EmailVerification
+from app.db.models import EmailVerification, User
 from app.schemas.user import VerifyRequest  # le schéma avec le champ `token: str`
+from fastapi import BackgroundTasks
+from sqlalchemy.exc import IntegrityError
+from app.core.email import send_verification_email
+from app.core.verification import create_verification_link
 
 router = APIRouter()
 
@@ -48,20 +52,22 @@ def get_current_user(
         raise credentials_exception
     return user
 
-6
 def get_current_active_user(current_user=Depends(get_current_user)):
     if current_user.disabled:
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
+# --- Helper function to issue tokens ---
+def issue_tokens(db: Session, user: User) -> dict:
+    access_token = create_access_token(
+        data={"sub": user.username},
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    refresh_token = create_refresh_token(data={"sub": user.username})
+    save_refresh_token(db, user.id, refresh_token)
+    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
 # --- Routes ---
-
-from fastapi import BackgroundTasks
-from sqlalchemy.exc import IntegrityError
-
-from app.core.email import send_verification_email
-from app.core.verification import create_verification_link
 
 
 @router.post("/register", response_model=UserOut, status_code=201)
@@ -91,7 +97,6 @@ def register(
 def verify(payload: VerifyRequest, db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
 
-    # 1-2. Hasher puis chercher une ligne valide
     v = (
         db.query(EmailVerification)
         .filter(
@@ -103,30 +108,23 @@ def verify(payload: VerifyRequest, db: Session = Depends(get_db)):
         .first()
     )
     if not v:
-        raise HTTPException(400, "Lien invalide ou expiré")
+        raise HTTPException(status_code=400, detail="Lien invalide ou expiré")
 
     user = v.user
-
-    # 3. Marquer comme utilisé
     v.used_at = now
 
-    # 4. Signup : on active le compte, aucun JWT
     if v.purpose == "signup":
         user.is_verified = True
         db.commit()
         return {"detail": "Email vérifié, vous pouvez vous connecter."}
 
-    # 5. Login : contrôle puis émission des tokens
+    # purpose == "login"
     if not user.is_verified or user.disabled:
         db.commit()  # le token reste consommé
-        raise HTTPException(403, "Compte non vérifié ou désactivé")
+        raise HTTPException(status_code=403, detail="Compte non vérifié ou désactivé")
 
-    access = create_access_token(user.username)
-    refresh = create_refresh_token(user.username)
-    user.refresh_token = refresh
-    db.commit()
-    return {"access_token": access, "refresh_token": refresh, "token_type": "bearer"}
-
+    db.commit()  # enregistre used_at avant d'émettre les tokens
+    return issue_tokens(db, user)
 VERIFY_PAGE = """<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><title>Vérification</title></head>
 <body style="font-family:sans-serif;max-width:420px;margin:60px auto">
@@ -153,22 +151,57 @@ VERIFY_PAGE = """<!doctype html>
 def verify_page():
     return HTMLResponse(VERIFY_PAGE)
 
-@router.post("/token", response_model=TokenPair)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+import logging
+from datetime import datetime, timedelta, timezone
+
+from fastapi import BackgroundTasks
+from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
+
+
+@router.post("/token", response_model=None)
+def login(
+    background: BackgroundTasks,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
         raise HTTPException(status_code=401, detail="Incorrect username or password",
                             headers={"WWW-Authenticate": "Bearer"})
-    
-    access_token = create_access_token(
-        data={"sub": user.username},
-        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    if user.disabled:
+        logger.info("Login refusé (compte désactivé): %s", user.username)
+        raise HTTPException(status_code=403, detail="Compte désactivé")
+    if not user.is_verified:
+        logger.info("Login refusé (email non vérifié): %s", user.username)
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "email_not_verified", "message": "Vérifiez votre email avant de vous connecter."},
+        )
+
+    # Mode dev : saute l'étape email (pratique pour Swagger)
+    if not settings.LOGIN_EMAIL_REQUIRED:
+        return issue_tokens(db, user)
+
+    # Évite d'envoyer un email à chaque clic sur « se connecter »
+    last = (
+        db.query(EmailVerification)
+        .filter(EmailVerification.user_id == user.id, EmailVerification.purpose == "login")
+        .order_by(EmailVerification.created_at.desc())
+        .first()
     )
-    refresh_token = create_refresh_token(data={"sub": user.username})
-    save_refresh_token(db, user.id, refresh_token)
+    now = datetime.now(timezone.utc)
+    if not last or now - last.created_at > timedelta(seconds=60):
+        link = create_verification_link(db, user, "login")
+        background.add_task(send_verification_email, user.email, link, "login")
+        print(f"Email de connexion envoyé à {user.email} (lien: {link})")
 
-    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
-
+    return JSONResponse(
+        status_code=202,
+        content={"code": "login_email_sent",
+                 "message": "Un lien de connexion vient d'être envoyé à votre adresse email."},
+    )
 @router.post("/refresh", response_model=TokenPair)
 def refresh_access_token(body: RefreshRequest, db: Session = Depends(get_db)):
     credentials_exception = HTTPException(status_code=401, detail="Invalid refresh token")

@@ -3,20 +3,18 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy.orm import Session
-
 from app.core.config import settings
-from app.db.models import EmailVerification, User
+from app.db.models import EmailVerification
 
 
 def hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def create_verification_link(db: Session, user: User, purpose: str) -> str:
+def create_verification_link(db, user, purpose, attempt_secret=None) -> str:
     now = datetime.now(timezone.utc)
 
-    # 3. Invalider les tokens non utilisés du même (user, purpose)
+    # Annule les anciens liens non utilisés (même user, même purpose)
     (
         db.query(EmailVerification)
         .filter(
@@ -27,23 +25,23 @@ def create_verification_link(db: Session, user: User, purpose: str) -> str:
         .update({"used_at": now}, synchronize_session=False)
     )
 
-    # 1-2. Token brut + hash
-    raw = secrets.token_urlsafe(32)
+    raw = secrets.token_urlsafe(32)   # part par email
 
-    # 4. Durée selon le purpose
     ttl = (
-        timedelta(hours=settings.signup_token_expire_hours)
+        timedelta(hours=settings.SIGNUP_TOKEN_EXPIRE_HOURS)
         if purpose == "signup"
-        else timedelta(minutes=settings.login_token_expire_minutes)
+        else timedelta(minutes=settings.LOGIN_TOKEN_EXPIRE_MINUTES)
     )
 
     db.add(EmailVerification(
         user_id=user.id,
         purpose=purpose,
         token_hash=hash_token(raw),
+        # secret de la page de login : seul son hash est stocké (None pour signup)
+        attempt_hash=hash_token(attempt_secret) if attempt_secret else None,
         expires_at=now + ttl,
     ))
+    print(f"Verification link created for user {user.username} with purpose {purpose}. Expires at {now + ttl}.")
     db.commit()
 
-    # 5. Le lien
-    return f"{settings.frontend_verify_url}?token={raw}"
+    return f"{settings.FRONTEND_VERIFY_URL}?token={raw}"

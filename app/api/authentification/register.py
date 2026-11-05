@@ -13,8 +13,6 @@ from app.db.base import get_db
 from app.db.models import EmailVerification
 from app.schemas.user import UserCreate, UserOut, VerifyRequest
 
-from app.api.authentification.login import issue_tokens
-
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -65,7 +63,6 @@ def register(
     background.add_task(send_verification_email, user.email, link, "signup")
     return user
 
-
 @router.post("/verify")
 def verify(payload: VerifyRequest, db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
@@ -80,23 +77,30 @@ def verify(payload: VerifyRequest, db: Session = Depends(get_db)):
         .first()
     )
     if not verification:
+        print(f"Invalid or expired verification token attempted at {now}.")
         raise HTTPException(status_code=400, detail="Lien invalide ou expiré")
 
     user = verification.user
-    verification.used_at = now
+    verification.used_at = now  # lien à usage unique
 
     if verification.purpose == "signup":
         user.is_verified = True
         db.commit()
-        return {"detail": "Email vérifié, vous pouvez vous connecter."}
+        print(f"User {user.username} verified signup link successfully at {now}.")
+        return {"purpose": "signup", "detail": "Email vérifié, vous pouvez vous connecter."}
 
+    # purpose == "login" : on approuve seulement, aucun token émis ici
     if not user.is_verified or user.disabled:
-        db.commit()
+        db.commit()  # le lien reste consommé
         raise HTTPException(status_code=403, detail="Compte non vérifié ou désactivé")
 
+    verification.approved_at = now
     db.commit()
-    return issue_tokens(db, user)
-
+    print(f"User {user.username} verified login link successfully at {now}.")
+    return {
+        "purpose": "login",
+        "detail": "Connexion approuvée. Vous pouvez retourner sur la page de connexion.",
+    }
 
 @router.get("/verify", include_in_schema=False, response_class=HTMLResponse)
 def verify_page():

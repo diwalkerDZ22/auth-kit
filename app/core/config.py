@@ -1,5 +1,3 @@
-import http
-
 from pydantic_settings import BaseSettings
 
 
@@ -10,14 +8,14 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    resend_api_key: str = ""
-    mail_from: str = "onboarding@resend.dev"
-    mail_from_name: str = "FakeJob Auth"
-    frontend_verify_url: str = "http://127.0.0.1:8000/auth/verify"
-    signup_token_expire_hours: int = 24
-    login_token_expire_minutes: int = 15
+    RESEND_API_KEY: str = ""
+    MAIL_FROM: str = "onboarding@resend.dev"
+    MAIL_FROM_NAME: str = "FakeJob Auth"
+    SIGNUP_TOKEN_EXPIRE_HOURS: int = 24
+    LOGIN_TOKEN_EXPIRE_MINUTES: int = 15
     LOGIN_EMAIL_REQUIRED: bool = True
-    
+    FRONTEND_VERIFY_URL: str = "http://localhost:5173/verify-email"
+
     class Config:
         env_file = ".env"
 

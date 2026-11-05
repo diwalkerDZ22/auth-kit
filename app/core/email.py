@@ -5,11 +5,11 @@ import resend
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-resend.api_key = settings.resend_api_key
+resend.api_key = settings.RESEND_API_KEY
 
 def send_verification_email(to: str, verify_url: str, purpose: str) -> bool:
-    if not settings.resend_api_key.strip():
-        logger.error("Envoi impossible: resend_api_key n'est pas configurée dans le fichier .env")
+    if not settings.RESEND_API_KEY.strip():
+        logger.error("Envoi impossible: RESEND_API_KEY n'est pas configurée dans le fichier .env")
         return False
 
     if purpose == "login":
@@ -24,7 +24,7 @@ def send_verification_email(to: str, verify_url: str, purpose: str) -> bool:
 
     try:
         resend.Emails.send({
-            "from": f"{settings.mail_from_name} <{settings.mail_from}>",
+            "from": f"{settings.MAIL_FROM_NAME} <{settings.MAIL_FROM}>",
             "to": [to],
             "subject": subject,
             "html": (

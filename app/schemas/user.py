@@ -23,7 +23,9 @@ class RefreshRequest(BaseModel):
 
 class VerifyRequest(BaseModel):
     token: str
-
+    
+class ClaimRequest(BaseModel):
+    attempt_id: str
 # --- User ---
 
 class UserCreate(BaseModel):

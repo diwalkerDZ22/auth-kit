@@ -22,9 +22,9 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO)  # affiche la stack trace si l'envoi échoue
 
     fake_token = secrets.token_urlsafe(32)
-    verify_url = f"{settings.frontend_verify_url}?token={fake_token}"
+    verify_url = f"{settings.FRONTEND_VERIFY_URL}?token={fake_token}"
 
-    print(f"Expéditeur   : {settings.mail_from_name} <{settings.mail_from}>")
+    print(f"Expéditeur   : {settings.MAIL_FROM_NAME} <{settings.MAIL_FROM}>")
     print(f"Destinataire : {args.to}")
     print(f"Purpose      : {args.purpose}")
     print(f"Lien         : {verify_url}")

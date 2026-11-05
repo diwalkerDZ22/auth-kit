@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, String, false, func,
+    Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, String, func,
 )
 from sqlalchemy.orm import relationship
 
@@ -79,8 +79,11 @@ class EmailVerification(Base):
     )
     purpose = Column(String(16), nullable=False)
     token_hash = Column(String(64), unique=True, index=True, nullable=False)  # sha256 hex = 64 car.
+    attempt_hash = Column(String(64), unique=True, index=True, nullable=True)  # secret de la page de login (None pour signup)
     expires_at = Column(DateTime(timezone=True), nullable=False)
-    used_at = Column(DateTime(timezone=True), nullable=True)
+    used_at = Column(DateTime(timezone=True), nullable=True)       # lien consommé (ou remplacé)
+    approved_at = Column(DateTime(timezone=True), nullable=True)   # lien login cliqué
+    claimed_at = Column(DateTime(timezone=True), nullable=True)    # tokens remis à la page d'origine
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     user = relationship("User", back_populates="email_verifications")

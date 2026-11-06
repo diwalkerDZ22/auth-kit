@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session
-from app.db.models import User
+from app.db.models import Role, User
 from app.schemas.user import UserCreate
 from app.core.security import get_password_hash, verify_password
-
+DEFAULT_ROLE = "user"
 
 def get_user_by_username(db: Session, username: str) -> User | None:
     return db.query(User).filter(User.username == username).first()
@@ -13,13 +13,14 @@ def get_user_by_email(db: Session, email: str) -> User | None:
 
 
 def create_user(db: Session, user_in: UserCreate) -> User:
+    role = db.query(Role).filter(Role.name == DEFAULT_ROLE).one()
     user = User(
         username=user_in.username,
         email=user_in.email,
         full_name=user_in.full_name,
         hashed_password=get_password_hash(user_in.password),
         disabled=False,
-        role_id=user_in.role_id,
+        role_id=role.id,
         is_verified=False
     )
     db.add(user)

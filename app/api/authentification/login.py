@@ -91,8 +91,14 @@ def refresh_access_token(body: RefreshRequest, db: Session = Depends(get_db)):
 
     username = payload.get("sub")
     user = get_user_by_username(db, username)
+
     if user is None or user.refresh_token != body.refresh_token:
         raise credentials_exception
+    
+    if user.disabled or not user.is_verified:
+        print(f"User {user.username} attempted to refresh token but account is disabled or not verified.")
+        raise HTTPException(status_code=403, detail="Compte non autorisé")
+
     print(f"Refresh token used for user {user.username}. Issuing new access token.")
     return issue_tokens(db, user)
 

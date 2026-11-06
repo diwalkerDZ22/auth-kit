@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import HTMLResponse
@@ -11,7 +11,7 @@ from app.core.verification import create_verification_link, hash_token
 from app.crud.user import create_user, get_user_by_email, get_user_by_username
 from app.db.base import get_db
 from app.db.models import EmailVerification
-from app.schemas.user import UserCreate, UserOut, VerifyRequest
+from app.schemas.user import UserCreate, UserOut, VerifyRequest,ResendRequest
 
 
 router = APIRouter()
@@ -105,3 +105,25 @@ def verify(payload: VerifyRequest, db: Session = Depends(get_db)):
 @router.get("/verify", include_in_schema=False, response_class=HTMLResponse)
 def verify_page():
     return VERIFY_PAGE
+
+@router.post("/resend-verification")
+def resend_verification(
+    payload: ResendRequest,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    user = get_user_by_email(db, payload.email.lower())
+
+    if user and not user.is_verified:
+        last = (
+            db.query(EmailVerification)
+            .filter(EmailVerification.user_id == user.id, EmailVerification.purpose == "signup")
+            .order_by(EmailVerification.created_at.desc())
+            .first()
+        )
+        if not last or datetime.now(timezone.utc) - last.created_at > timedelta(minutes=2):
+            link = create_verification_link(db, user, "signup")
+            background.add_task(send_verification_email, user.email, link, "signup")
+
+    # Même réponse dans tous les cas : ne révèle pas si le compte existe
+    return {"detail": "Si un compte non vérifié existe pour cette adresse, un email a été envoyé."}

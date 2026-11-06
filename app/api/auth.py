@@ -6,6 +6,7 @@ from app.core.security import decode_access_token
 from app.crud.user import get_user_by_username, revoke_refresh_token
 from app.db.base import get_db
 from app.schemas.user import UserOut
+from app.db.models import User
 
 
 router = APIRouter()
@@ -35,11 +36,12 @@ def get_current_user(
     return user
 
 
-def get_current_active_user(current_user=Depends(get_current_user)):
-    if current_user.disabled:
-        raise HTTPException(status_code=400, detail="Inactive user")
-    return current_user
-
+def get_current_active_user(user: User = Depends(get_current_user)):
+    if user.disabled:
+        raise HTTPException(status_code=403, detail="Compte désactivé")
+    if not user.is_verified:
+        raise HTTPException(status_code=403, detail="Email non vérifié")
+    return user
 
 @router.post("/logout")
 def logout(
@@ -47,6 +49,7 @@ def logout(
     db: Session = Depends(get_db),
 ):
     revoke_refresh_token(db, current_user.id)
+    print(f"User {current_user.username} logged out successfully.")
     return {"message": "Logged out successfully"}
 
 

@@ -26,6 +26,9 @@ class VerifyRequest(BaseModel):
     
 class ClaimRequest(BaseModel):
     attempt_id: str
+
+class ResendRequest(BaseModel):
+    email: EmailStr
 # --- User ---
 
 class UserCreate(BaseModel):
@@ -33,7 +36,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     full_name: str | None = None
     password: str
-    role_id: int  # Ajout du champ role_id pour spécifier le rôle de l'utilisateur lors de la création
+  
 
 
 class UserOut(BaseModel):

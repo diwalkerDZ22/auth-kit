@@ -43,6 +43,14 @@ def get_current_active_user(user: User = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Email non vérifié")
     return user
 
+def require_permission(permission: str):
+    def dependency(user: User = Depends(get_current_active_user)):
+        if permission not in {p.code for p in user.role.permissions}:
+            raise HTTPException(status_code=403, detail="Permission refusée")
+        return user
+    return dependency
+    
+
 @router.post("/logout")
 def logout(
     current_user=Depends(get_current_active_user),

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.security import decode_access_token
 from app.crud.user import get_user_by_username, revoke_refresh_token
 from app.db.base import get_db
-from app.schemas.user import UserOut
+from app.schemas.user import UserMe, UserOut
 from app.db.models import User
 
 
@@ -61,6 +61,14 @@ def logout(
     return {"message": "Logged out successfully"}
 
 
-@router.get("/me", response_model=UserOut)
-def read_me(current_user=Depends(get_current_active_user)):
-    return current_user
+@router.get("/me", response_model=UserMe)
+def me(user: User = Depends(get_current_active_user)):
+    return UserMe(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        full_name=user.full_name,
+        is_verified=user.is_verified,
+        role=user.role.name,
+        permissions=sorted(p.code for p in user.role.permissions),
+    )

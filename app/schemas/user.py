@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 # --- Token ---
@@ -49,3 +49,15 @@ class UserOut(BaseModel):
     is_verified: bool  # Ajout du champ is_verified pour indiquer si l'utilisateur a vérifié son email
 
     model_config = {"from_attributes": True}  # replaces orm_mode en Pydantic v2
+
+
+class UserMe(BaseModel):
+    id: int
+    username: str
+    email: EmailStr
+    full_name: str | None = None
+    is_verified: bool
+    role: str
+    permissions: list[str]
+
+    model_config = ConfigDict(from_attributes=True)

@@ -61,6 +61,7 @@ def register(
 
     link = create_verification_link(db, user, "signup")
     background.add_task(send_verification_email, user.email, link, "signup")
+    print(f"Sent verification email to user {user.username} at {user.email}. Link expires at {datetime.now(timezone.utc) + timedelta(hours=24)}.")
     return user
 
 @router.post("/verify")
@@ -124,6 +125,7 @@ def resend_verification(
         if not last or datetime.now(timezone.utc) - last.created_at > timedelta(minutes=2):
             link = create_verification_link(db, user, "signup")
             background.add_task(send_verification_email, user.email, link, "signup")
+            print(f"Resent verification email to user {user.username} at {user.email}. Link expires at {datetime.now(timezone.utc) + timedelta(hours=24)}.")
 
     # Même réponse dans tous les cas : ne révèle pas si le compte existe
     return {"detail": "Si un compte non vérifié existe pour cette adresse, un email a été envoyé."}

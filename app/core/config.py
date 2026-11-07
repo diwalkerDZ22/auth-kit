@@ -1,23 +1,24 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "sqlite:///./auth.db"
-    SECRET_KEY: str = "dev-only-change-this-secret"
+    # Obligatoires : pas de valeur par défaut, l'app refuse de démarrer sans elles
+    DATABASE_URL: str
+    SECRET_KEY: str
+    RESEND_API_KEY: str
+
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    RESEND_API_KEY: str = ""
     MAIL_FROM: str = "onboarding@resend.dev"
     MAIL_FROM_NAME: str = "FakeJob Auth"
     SIGNUP_TOKEN_EXPIRE_HOURS: int = 24
     LOGIN_TOKEN_EXPIRE_MINUTES: int = 15
-    LOGIN_EMAIL_REQUIRED: bool = True
+    LOGIN_EMAIL_REQUIRED: bool = True   # sûr par défaut ; false seulement dans ton .env de dev
     FRONTEND_VERIFY_URL: str = "http://localhost:5173/verify-email"
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env")
 
 
 settings = Settings()

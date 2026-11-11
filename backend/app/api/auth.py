@@ -1,14 +1,17 @@
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.errors import ApiError
-from app.core.security import decode_access_token
-from app.crud.user import get_user_by_username, revoke_refresh_token
+from app.core.limiter import limiter
+from app.core.password_policy import password_problem
+from app.core.security import decode_access_token, verify_password
+from app.core.tokens import issue_tokens
+from app.crud.user import bump_token_version, get_user_by_username, set_password
 from app.db.base import get_db
-from app.schemas.user import UserMe
+from app.schemas.user import PasswordChange, TokenPair, UserMe, UserUpdate
 from app.db.models import User
 
 
@@ -33,7 +36,8 @@ def get_current_user(
         raise ApiError("invalid_token", headers=_BEARER)
 
     user = get_user_by_username(db, username)
-    if user is None:
+    # Version différente : token révoqué (logout, mot de passe, désactivation, rôle)
+    if user is None or payload.get("ver") != user.token_version:
         raise ApiError("invalid_token", headers=_BEARER)
     return user
 
@@ -53,24 +57,63 @@ def require_permission(permission: str):
     return dependency
 
 
+def new_password_error(user: User, new_password: str, field: str = "new_password") -> ApiError | None:
+    """Erreur 422 au même format que la validation Pydantic, ou None si le mot de passe convient."""
+    problem = password_problem(new_password, user.username, user.email)
+    if problem:
+        return ApiError("validation_error", fields={field: problem})
+    return None
+
+
 @router.post("/logout")
 def logout(
     current_user=Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    revoke_refresh_token(db, current_user.id)
+    # Révoque l'access token en cours et le refresh token
+    bump_token_version(current_user)
+    db.commit()
     logger.info("Déconnexion de l'utilisateur %s", current_user.username)
     return {"message": "Déconnexion réussie."}
 
 
 @router.get("/me", response_model=UserMe)
 def me(user: User = Depends(get_current_active_user)):
-    return UserMe(
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        full_name=user.full_name,
-        is_verified=user.is_verified,
-        role=user.role.name,
-        permissions=sorted(p.code for p in user.role.permissions),
-    )
+    return UserMe.from_user(user)
+
+
+@router.patch("/me", response_model=UserMe)
+def update_me(
+    payload: UserUpdate,
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    if "full_name" in payload.model_fields_set:
+        user.full_name = payload.full_name or None
+    db.commit()
+    logger.info("Profil mis à jour pour %s", user.username)
+    return UserMe.from_user(user)
+
+
+@router.post("/password/change", response_model=TokenPair)
+@limiter.limit("5/15minutes")   # vérifie le mot de passe actuel : même protection que /token
+def change_password(
+    request: Request,
+    payload: PasswordChange,
+    user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(payload.current_password, user.hashed_password):
+        logger.info("Changement de mot de passe refusé à %s : mot de passe actuel faux", user.username)
+        raise ApiError("invalid_current_password")
+    if payload.new_password == payload.current_password:
+        raise ApiError("validation_error", fields={"new_password": "Le nouveau mot de passe doit être différent de l'actuel."})
+    error = new_password_error(user, payload.new_password)
+    if error:
+        raise error
+
+    # Coupe les autres sessions, puis rouvre celle-ci avec des tokens neufs
+    set_password(user, payload.new_password)
+    db.commit()
+    logger.info("Mot de passe changé pour %s", user.username)
+    return issue_tokens(db, user)

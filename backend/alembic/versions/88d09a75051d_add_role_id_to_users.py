@@ -30,20 +30,10 @@ def upgrade() -> None:
         """
     )
 
-    op.alter_column(
-        "users",
-        "role_id",
-        existing_type=sa.Integer(),
-        nullable=False,
-    )
-
-    op.create_foreign_key(
-        "fk_users_role_id_roles",
-        "users",
-        "roles",
-        ["role_id"],
-        ["id"],
-    )
+    # batch : ALTER direct sur PostgreSQL, table recréée sur SQLite
+    with op.batch_alter_table("users") as batch:
+        batch.alter_column("role_id", existing_type=sa.Integer(), nullable=False)
+        batch.create_foreign_key("fk_users_role_id_roles", "roles", ["role_id"], ["id"])
 
 
 def downgrade() -> None:

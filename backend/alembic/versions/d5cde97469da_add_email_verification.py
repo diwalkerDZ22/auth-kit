@@ -44,8 +44,9 @@ def upgrade() -> None:
         "ix_email_verifications_token_hash", "email_verifications", ["token_hash"], unique=True
     )
 
-    # Supabase : empêche l'accès via l'API REST publique
-    op.execute("ALTER TABLE email_verifications ENABLE ROW LEVEL SECURITY")
+    # Supabase : empêche l'accès via l'API REST publique (PostgreSQL uniquement)
+    if op.get_bind().dialect.name == "postgresql":
+        op.execute("ALTER TABLE email_verifications ENABLE ROW LEVEL SECURITY")
 
 
 def downgrade() -> None:

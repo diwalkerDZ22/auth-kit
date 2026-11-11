@@ -4,25 +4,21 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-from app.core.config import settings
+# Même connexion que l'app (driver PostgreSQL et SSL gérés dans app/db/base.py)
+from app.db.base import SessionLocal
 from app.db.models import Permission, Role
 
-engine = create_engine(settings.DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine)
-
 # Actions atomiques : code -> description
+# Un projet qui utilise auth-kit ajoute ici ses propres permissions (ex. "jobs:classify").
 PERMISSIONS = {
-    "jobs:classify": "Vérifier si une offre d'emploi est légitime",
     "users:manage": "Gérer les utilisateurs et leurs rôles",
 }
 
 # nom du rôle -> (description, permissions)
+# Attention : le script resynchronise les permissions de chaque rôle listé ici.
 ROLES = {
-    "user": ("Utilisateur standard", ["jobs:classify"]),
-    "admin": ("Administrateur", ["jobs:classify", "users:manage"]),
+    "user": ("Utilisateur standard", []),
+    "admin": ("Administrateur", ["users:manage"]),
 }
 
 

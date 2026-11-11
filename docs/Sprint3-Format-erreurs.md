@@ -130,6 +130,25 @@ Réponse intermédiaire (succès, mais action attendue) :
 | `invalid_link` | 400 | Lien inconnu, déjà utilisé ou expiré |
 | `account_not_allowed` | 403 | Lien de login pour un compte désactivé ou non vérifié |
 
+### Mot de passe et profil (Sprint 5)
+
+| Code | HTTP | Quand |
+|------|------|-------|
+| `invalid_link` | 400 | `/auth/password/reset` : lien inconnu, déjà utilisé ou expiré |
+| `account_disabled` | 403 | `/auth/password/reset` : compte désactivé |
+| `invalid_current_password` | 400 | `/auth/password/change` : mot de passe actuel faux |
+| `validation_error` | 422 | Nouveau mot de passe refusé (`fields.new_password`) |
+| `email_unavailable` | 503 | `/auth/token` : le mail de login n'a pas pu partir |
+
+### Administration (Sprint 5)
+
+| Code | HTTP | Quand |
+|------|------|-------|
+| `user_not_found` | 404 | Utilisateur inconnu |
+| `role_not_found` | 400 | Rôle inconnu |
+| `cannot_modify_self` | 400 | Un admin modifie son propre compte |
+| `last_admin` | 409 | Retirer ou désactiver le dernier admin actif (garde-fou) |
+
 ---
 
 ## Étapes de mise en œuvre

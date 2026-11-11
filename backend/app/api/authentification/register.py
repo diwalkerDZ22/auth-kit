@@ -73,6 +73,8 @@ def verify(request: Request, payload: VerifyRequest, db: Session = Depends(get_d
         db.query(EmailVerification)
         .filter(
             EmailVerification.token_hash == hash_token(payload.token),
+            # Un lien de reset ne passe que par /auth/password/reset
+            EmailVerification.purpose.in_(("signup", "login")),
             EmailVerification.used_at.is_(None),
             EmailVerification.expires_at > now,
         )

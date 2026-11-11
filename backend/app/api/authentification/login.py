@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timedelta, timezone
 import secrets
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -12,7 +12,7 @@ from app.core.errors import ApiError
 from app.core.limiter import limiter
 from app.core.security import decode_access_token
 from app.core.tokens import issue_tokens
-from app.core.verification import create_verification_link, hash_token
+from app.core.verification import create_verification_link, discard_pending_links, hash_token
 from app.crud.user import (
     authenticate_user,
     get_user_by_username,
@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 @limiter.limit("10/15minutes")   # anti brute-force du mot de passe
 def login(
     request: Request,
-    background: BackgroundTasks,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
@@ -63,8 +62,12 @@ def login(
 
     attempt_secret = secrets.token_urlsafe(32)
     link = create_verification_link(db, user, "login", attempt_secret)
-    background.add_task(send_verification_email, user.email, link, "login")
-    logger.info("Email de login programmé pour %s", user.username)
+    # Envoi synchrone : on ne répond « mail envoyé » que s'il est vraiment parti
+    if not send_verification_email(user.email, link, "login"):
+        discard_pending_links(db, user, "login")
+        logger.warning("Email de login non envoyé pour %s", user.username)
+        raise ApiError("email_unavailable")
+    logger.info("Email de login envoyé pour %s", user.username)
 
     return JSONResponse(
         status_code=202,
@@ -85,8 +88,8 @@ def refresh_access_token(request: Request, body: RefreshRequest, db: Session = D
     username = payload.get("sub")
     user = get_user_by_username(db, username)
 
-    # Seul le dernier refresh token émis est valable
-    if user is None or user.refresh_token != body.refresh_token:
+    # Seul le dernier refresh token émis est valable, et sa version doit être à jour
+    if user is None or user.refresh_token != body.refresh_token or payload.get("ver") != user.token_version:
         raise ApiError("invalid_refresh_token")
 
     if user.disabled or not user.is_verified:

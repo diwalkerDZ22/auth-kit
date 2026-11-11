@@ -1,6 +1,6 @@
 """Format d'erreur unique de l'API : {"code": ..., "message": ...}.
 
-Le catalogue ERRORS est la référence pour le frontend (voir Sprint3-Format-erreurs.md).
+Le catalogue ERRORS est la référence pour le frontend (voir docs/Sprint3-Format-erreurs.md).
 Dans les routes : raise ApiError("code").
 """
 import logging
@@ -42,6 +42,14 @@ ERRORS: dict[str, tuple[int, str]] = {
     "email_taken": (409, "Cette adresse email est déjà utilisée."),
     "account_exists": (409, "Nom d'utilisateur ou email déjà utilisé."),
     "invalid_link": (400, "Lien invalide ou expiré."),
+    # Profil / mot de passe
+    "invalid_current_password": (400, "Mot de passe actuel incorrect."),
+    "email_unavailable": (503, "Impossible d'envoyer l'email pour le moment, réessayez plus tard."),
+    # Administration
+    "user_not_found": (404, "Utilisateur introuvable."),
+    "role_not_found": (400, "Rôle inconnu."),
+    "cannot_modify_self": (400, "Vous ne pouvez pas modifier votre propre compte depuis l'administration."),
+    "last_admin": (409, "Impossible : ce compte est le dernier administrateur actif."),
 }
 
 # Codes renvoyés pour les HTTPException levées par les librairies (FastAPI, Starlette)
@@ -62,6 +70,9 @@ _VALIDATION_MESSAGES = {
     "json_invalid": "JSON invalide.",
     "string_too_short": "Trop court.",
     "string_too_long": "Trop long.",
+    "greater_than_equal": "Valeur trop petite.",
+    "less_than_equal": "Valeur trop grande.",
+    "url_parsing": "URL invalide.",
 }
 
 
@@ -91,6 +102,9 @@ def _field_name(loc: tuple) -> str:
 
 
 def _validation_message(err: dict) -> str:
+    # Erreurs levées par nos validateurs (PydanticCustomError("kit_...", message)) : message déjà en français
+    if str(err.get("type", "")).startswith("kit_"):
+        return err["msg"]
     if err.get("type") in _VALIDATION_MESSAGES:
         return _VALIDATION_MESSAGES[err["type"]]
     if "email" in str(err.get("msg", "")).lower():

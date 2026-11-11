@@ -5,8 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
 from app.api.authentification.login import router as login_router
+from app.api.authentification.password import router as password_router
 from app.api.authentification.register import router as register_router
-from app.api.jobs import router as jobs_router
 from app.api.admin import router as admin_router
 
 from app.core.config import settings
@@ -23,7 +23,7 @@ if not _app_logger.handlers:
     _app_logger.addHandler(_handler)
 
 
-app = FastAPI(title="JWT Auth FastApi")
+app = FastAPI(title=settings.APP_NAME)
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,5 +39,5 @@ register_error_handlers(app)
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(login_router, prefix="/auth", tags=["authentification"])
 app.include_router(register_router, prefix="/auth", tags=["authentification"])
-app.include_router(jobs_router,tags=["jobs"])
-app.include_router(admin_router,tags=["admin"])
+app.include_router(password_router, prefix="/auth", tags=["mot de passe"])
+app.include_router(admin_router, tags=["admin"])

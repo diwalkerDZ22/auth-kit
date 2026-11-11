@@ -1,9 +1,10 @@
 from sqlalchemy import (
-    Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, String, func,
+    Boolean, CheckConstraint, Column, ForeignKey, Integer, String, func,
 )
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
+from app.db.types import UTCDateTime
 
 
 class User(Base):
@@ -16,6 +17,8 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     disabled = Column(Boolean, default=False)
     refresh_token = Column(String, nullable=True)
+    # Incrémenté pour révoquer tous les tokens émis (logout, mot de passe, désactivation, rôle)
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")
     
     role_id = Column(Integer, ForeignKey("roles.id"), nullable=False)
     role = relationship("Role", back_populates="users",lazy="joined")  # Utilisation de lazy="joined" pour charger le rôle en même temps que l'utilisateur
@@ -70,7 +73,7 @@ class RolePermission(Base):
 class EmailVerification(Base):
     __tablename__ = "email_verifications"
     __table_args__ = (
-        CheckConstraint("purpose IN ('signup', 'login')", name="ck_email_verifications_purpose"),
+        CheckConstraint("purpose IN ('signup', 'login', 'reset')", name="ck_email_verifications_purpose"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -80,10 +83,10 @@ class EmailVerification(Base):
     purpose = Column(String(16), nullable=False)
     token_hash = Column(String(64), unique=True, index=True, nullable=False)  # sha256 hex = 64 car.
     attempt_hash = Column(String(64), unique=True, index=True, nullable=True)  # secret de la page de login (None pour signup)
-    expires_at = Column(DateTime(timezone=True), nullable=False)
-    used_at = Column(DateTime(timezone=True), nullable=True)       # lien consommé (ou remplacé)
-    approved_at = Column(DateTime(timezone=True), nullable=True)   # lien login cliqué
-    claimed_at = Column(DateTime(timezone=True), nullable=True)    # tokens remis à la page d'origine
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    expires_at = Column(UTCDateTime(), nullable=False)
+    used_at = Column(UTCDateTime(), nullable=True)       # lien consommé (ou remplacé)
+    approved_at = Column(UTCDateTime(), nullable=True)   # lien login cliqué
+    claimed_at = Column(UTCDateTime(), nullable=True)    # tokens remis à la page d'origine
+    created_at = Column(UTCDateTime(), nullable=False, server_default=func.now())
 
     user = relationship("User", back_populates="email_verifications")

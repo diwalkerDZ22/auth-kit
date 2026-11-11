@@ -134,13 +134,34 @@ Mot de passe trop court, trop courant ou identique au username : `validation_err
 
 ## Critères de done
 
-- [ ] Plus aucune trace métier de FakeJob dans le backend
-- [ ] Migration `token_version` + `reset`
-- [ ] Révocation immédiate (logout, mot de passe, désactivation, rôle)
-- [ ] Règles de mot de passe et de username
-- [ ] Mot de passe oublié de bout en bout
-- [ ] Profil et changement de mot de passe
-- [ ] Routes d’administration avec garde-fous
-- [ ] Mail de login synchrone, 503 si échec
-- [ ] Nouveaux codes dans `ERRORS` et dans le catalogue du Sprint 3
-- [ ] Tests ci-dessus passés
+- [x] Plus aucune trace métier de FakeJob dans le backend
+- [x] Migration `token_version` + `reset`
+- [x] Révocation immédiate (logout, mot de passe, désactivation, rôle)
+- [x] Règles de mot de passe et de username
+- [x] Mot de passe oublié de bout en bout
+- [x] Profil et changement de mot de passe
+- [x] Routes d’administration avec garde-fous
+- [x] Mail de login synchrone, 503 si échec
+- [x] Nouveaux codes dans `ERRORS` et dans le catalogue du Sprint 3
+- [x] Tests ci-dessus passés
+
+---
+
+## Bilan (2026-11-11)
+
+19 tests pytest (`backend/tests/`) couvrent les cas listés plus haut.
+
+Ajouts par rapport au plan :
+
+| Ajout | Raison |
+|-------|--------|
+| `jti` aléatoire dans chaque JWT | Deux tokens émis dans la même seconde étaient identiques : la rotation du refresh token ne servait à rien |
+| Lien de login **supprimé** (pas consommé) si l'envoi échoue | Sinon l'anti-spam (1 mail / min) bloquait le nouvel essai |
+| `SECRET_KEY` : 32 caractères minimum | Une clé vide était acceptée |
+| Migrations rejouables sur une base vide (PostgreSQL et SQLite) | La table `users` n'était créée par aucune migration ; RLS Supabase seulement sur PostgreSQL |
+| Type `UTCDateTime` | Dates toujours avec fuseau, y compris sous SQLite |
+
+À savoir :
+
+- `last_admin` ne peut pas être atteint par l'API tant que `cannot_modify_self` existe (l'admin qui agit est lui-même un admin actif) ; il reste comme garde-fou.
+- `seed_roles.py` resynchronise les permissions des rôles listés : sur une base partagée avec un projet qui a ses propres permissions (ex. `jobs:classify`), les ajouter dans `PERMISSIONS` / `ROLES` avant de le lancer.

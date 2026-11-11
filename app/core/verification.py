@@ -1,10 +1,13 @@
 # app/core/verification.py
 import hashlib
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
 from app.core.config import settings
 from app.db.models import EmailVerification
+
+logger = logging.getLogger(__name__)
 
 
 def hash_token(raw: str) -> str:
@@ -41,7 +44,7 @@ def create_verification_link(db, user, purpose, attempt_secret=None) -> str:
         attempt_hash=hash_token(attempt_secret) if attempt_secret else None,
         expires_at=now + ttl,
     ))
-    print(f"Verification link created for user {user.username} with purpose {purpose}. Expires at {now + ttl}.")
+    logger.info("Lien de vérification créé pour %s (purpose=%s, expire à %s)", user.username, purpose, now + ttl)
     db.commit()
 
     return f"{settings.FRONTEND_VERIFY_URL}?token={raw}"

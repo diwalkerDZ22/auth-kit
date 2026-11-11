@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     FRONTEND_VERIFY_URL: str = "http://localhost:5173/verify-email"
     # Origines autorisées par CORS ; dans .env au format JSON : ["http://a","http://b"]
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+    LOG_LEVEL: str = "INFO"
 
     model_config = SettingsConfigDict(env_file=".env")
 

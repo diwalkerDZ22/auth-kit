@@ -1,12 +1,13 @@
 import logging
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.email import send_verification_email
+from app.core.errors import ApiError
 from app.core.limiter import limiter
 from app.core.verification import create_verification_link, hash_token
 from app.crud.user import create_user, get_user_by_email, get_user_by_username
@@ -34,7 +35,7 @@ VERIFY_PAGE = """<!doctype html>
         body: JSON.stringify({token}),
       });
       const data = await r.json();
-      document.getElementById("msg").textContent = data.detail || "Connexion réussie.";
+      document.getElementById("msg").textContent = data.message || "Réponse inattendue.";
     };
   </script>
 </body></html>"""
@@ -49,22 +50,19 @@ def register(
     db: Session = Depends(get_db),
 ):
     if get_user_by_username(db, user_in.username):
-        raise HTTPException(status_code=400, detail="Username already taken")
-    if get_user_by_email(db, user_in.email.lower()):
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise ApiError("username_taken")
+    if get_user_by_email(db, user_in.email):
+        raise ApiError("email_taken")
 
     try:
         user = create_user(db, user_in)
     except IntegrityError:
         db.rollback()
-        raise HTTPException(
-            status_code=400,
-            detail="Username or email already registered",
-        )
+        raise ApiError("account_exists")
 
     link = create_verification_link(db, user, "signup")
     background.add_task(send_verification_email, user.email, link, "signup")
-    print(f"Sent verification email to user {user.username} at {user.email}. Link expires at {datetime.now(timezone.utc) + timedelta(hours=24)}.")
+    logger.info("Inscription de %s (id=%s), email de vérification programmé", user.username, user.id)
     return user
 
 @router.post("/verify")
@@ -82,8 +80,8 @@ def verify(request: Request, payload: VerifyRequest, db: Session = Depends(get_d
         .first()
     )
     if not verification:
-        print(f"Invalid or expired verification token attempted at {now}.")
-        raise HTTPException(status_code=400, detail="Lien invalide ou expiré")
+        logger.info("Lien de vérification invalide ou expiré")
+        raise ApiError("invalid_link")
 
     user = verification.user
     verification.used_at = now  # lien à usage unique
@@ -91,20 +89,20 @@ def verify(request: Request, payload: VerifyRequest, db: Session = Depends(get_d
     if verification.purpose == "signup":
         user.is_verified = True
         db.commit()
-        print(f"User {user.username} verified signup link successfully at {now}.")
-        return {"purpose": "signup", "detail": "Email vérifié, vous pouvez vous connecter."}
+        logger.info("Email vérifié pour %s", user.username)
+        return {"purpose": "signup", "message": "Email vérifié, vous pouvez vous connecter."}
 
     # purpose == "login" : on approuve seulement, aucun token émis ici
     if not user.is_verified or user.disabled:
         db.commit()  # le lien reste consommé
-        raise HTTPException(status_code=403, detail="Compte non vérifié ou désactivé")
+        raise ApiError("account_not_allowed")
 
     verification.approved_at = now
     db.commit()
-    print(f"User {user.username} verified login link successfully at {now}.")
+    logger.info("Connexion approuvée par email pour %s", user.username)
     return {
         "purpose": "login",
-        "detail": "Connexion approuvée. Vous pouvez retourner sur la page de connexion.",
+        "message": "Connexion approuvée. Vous pouvez retourner sur la page de connexion.",
     }
 
 @router.get("/verify", include_in_schema=False, response_class=HTMLResponse)
@@ -119,7 +117,7 @@ def resend_verification(
     background: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    user = get_user_by_email(db, payload.email.lower())
+    user = get_user_by_email(db, payload.email)
 
     if user and not user.is_verified:
         last = (
@@ -131,7 +129,7 @@ def resend_verification(
         if not last or datetime.now(timezone.utc) - last.created_at > timedelta(minutes=2):
             link = create_verification_link(db, user, "signup")
             background.add_task(send_verification_email, user.email, link, "signup")
-            print(f"Resent verification email to user {user.username} at {user.email}. Link expires at {datetime.now(timezone.utc) + timedelta(hours=24)}.")
+            logger.info("Email de vérification renvoyé à %s", user.username)
 
     # Même réponse dans tous les cas : ne révèle pas si le compte existe
-    return {"detail": "Si un compte non vérifié existe pour cette adresse, un email a été envoyé."}
+    return {"message": "Si un compte non vérifié existe pour cette adresse, un email a été envoyé."}

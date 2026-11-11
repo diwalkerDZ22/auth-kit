@@ -31,8 +31,11 @@ class TokenPair(BaseModel):
     refresh_token: str
     token_type: str
 
-class RefreshRequest(BaseModel):
-    refresh_token: str
+class AccessToken(BaseModel):
+    # Le refresh token n'est jamais dans le corps : il part en cookie httpOnly
+    access_token: str
+    token_type: str
+    expires_in: int   # secondes
 
 
 class VerifyRequest(BaseModel):

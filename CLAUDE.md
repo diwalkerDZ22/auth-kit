@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `auth-kit` is a reusable authentication module, extracted from the FakeJobApplicationRecognition project (history kept). It must stay project-agnostic: no business logic from a consuming project belongs here.
 
 - `backend/`: FastAPI authentication/authorization service.
-- `frontend/`: React + TypeScript (Vite) app, planned.
+- `frontend/`: React + TypeScript (Vite) app. `src/auth/` is the reusable module and must not import from `src/app/` (demo shell).
 - `docs/Sprint*.md`: design docs (in French) describing the intended behavior of each sprint; read the relevant one before changing the matching feature.
 
 Code comments, log messages, docs and API error messages are in French. Keep that convention.
@@ -31,6 +31,15 @@ python -m scripts.check_link <username>                          # create a veri
 
 Tests: `python -m pip install -r requirements-dev.txt` then `python -m pytest` (from `backend/`). `tests/conftest.py` sets env vars before importing `app` (temporary SQLite DB, fake `SECRET_KEY`), recreates the schema and seeds `user`/`admin` before each test, disables the rate limiter, and replaces `resend.Emails.send` with an in-memory outbox. Helpers: `make_user`, `login` (full email flow), `link_token`, `bearer`. No linter config.
 
+Frontend (from `frontend/`): `npm install`, `npm run dev` (port 5173, proxies `/api/*` to `http://127.0.0.1:8000/*`), `npm run build` (tsc + vite), `npm run lint` (oxlint). Keep build and lint warning-free.
+
+## Frontend architecture
+
+- **Tokens**: the access token lives only in memory (`auth/api.ts`); the refresh token is an httpOnly cookie. Never use localStorage/sessionStorage for tokens. `refreshSession()` is single-flight; `send()` replays a request once after a 401 `invalid_token`; a refresh is scheduled one minute before expiry; logout is broadcast to other tabs (`BroadcastChannel`).
+- **Auth state**: `AuthProvider` restores the session with `/auth/refresh` on load, then `/auth/me` via TanStack Query (`ME_QUERY_KEY`). Use `useAuth()` (from `auth/context.ts`) and the guards `RequireAuth`, `RequirePermission`, `GuestOnly`. New pages are added to the router next to `...authRoutes`.
+- **Forms**: React Hook Form + Zod (`auth/schemas.ts`, mirrors the backend rules). Show backend errors with `applyApiError()` (`fields` under inputs, the rest in `errors.root`); never duplicate backend messages.
+- `tsconfig` uses `verbatimModuleSyntax` and `erasableSyntaxOnly`: `import type` for types, no enums, no constructor parameter properties.
+
 ## Backend architecture
 
 - **Config** (`app/core/config.py`): a pydantic-settings `Settings` singleton loaded from `.env`. `DATABASE_URL` may be SQLite or PostgreSQL. `app/db/base.py` rewrites `postgresql://` to `postgresql+psycopg://` and forces `sslmode=require`. `alembic/env.py` takes the DB URL from these settings, not from `alembic.ini`.
@@ -48,6 +57,8 @@ Tests: `python -m pip install -r requirements-dev.txt` then `python -m pytest` (
   - The login email is sent synchronously: if Resend fails, the pending link is deleted and `/auth/token` returns 503 `email_unavailable`. Signup and reset emails stay `BackgroundTask`s.
   - Only SHA-256 hashes of the link token and of the `attempt_id` are stored. Creating a new link invalidates earlier unused links of the same user and purpose by setting `used_at`.
   - With `LOGIN_EMAIL_REQUIRED=false` (dev only), `/auth/token` returns tokens directly, which makes Swagger testing possible.
+- **Refresh cookie** (`core/cookies.py`): `issue_session()` (`core/tokens.py`) returns `AccessToken` in the body and sets the refresh token as an httpOnly cookie (`REFRESH_COOKIE_*`, `COOKIE_SECURE`, `COOKIE_SAMESITE`). `/auth/refresh` and `/auth/logout` read the cookie and require the `X-CSRF-Protection: 1` header (`require_csrf`). The refresh token never appears in a response body.
+- **Emails**: `EMAIL_BACKEND=console` (dev only) logs emails, links included, instead of sending them.
 - The frontend is expected at `http://localhost:5173` (`CORS_ORIGINS` and `FRONTEND_VERIFY_URL` in settings). `GET /auth/verify` serves a minimal HTML confirm page for testing without the frontend.
 - `slowapi` (`core/limiter.py`, per-IP, in-memory) limits every public `/auth/*` POST route with `@limiter.limit(...)`. Rate-limited routes need a `request: Request` parameter.
 - **Errors** (`core/errors.py`, see `docs/Sprint3-Format-erreurs.md`): every error response is `{"code", "message"}` (plus `fields` for 422). In routes, `raise ApiError("code")`, never `HTTPException`. Add new codes to the `ERRORS` catalogue (status + French message) and to the Sprint 3 table. Global handlers cover library 401/403/404/405, validation errors, 429 and 500.

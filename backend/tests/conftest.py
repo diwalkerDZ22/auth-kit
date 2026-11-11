@@ -15,6 +15,7 @@ os.environ.update({
     "SECRET_KEY": "cle-de-test-uniquement-pour-pytest-0123456789",
     "RESEND_API_KEY": "re_test",
     "LOGIN_EMAIL_REQUIRED": "true",
+    "COOKIE_SECURE": "false",   # le TestClient parle en HTTP : un cookie Secure ne serait pas renvoyé
     "LOG_LEVEL": "WARNING",
 })
 
@@ -29,6 +30,7 @@ from app.db.models import EmailVerification, Permission, Role, User
 from app.main import app
 
 PASSWORD = "cheval-batterie-agrafe"
+CSRF = {"X-CSRF-Protection": "1"}
 
 
 @pytest.fixture(autouse=True)

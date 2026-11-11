@@ -1,17 +1,18 @@
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.core.cookies import clear_refresh_cookie, read_refresh_cookie, require_csrf
 from app.core.errors import ApiError
 from app.core.limiter import limiter
 from app.core.password_policy import password_problem
 from app.core.security import decode_access_token, verify_password
-from app.core.tokens import issue_tokens
+from app.core.tokens import issue_session
 from app.crud.user import bump_token_version, get_user_by_username, set_password
 from app.db.base import get_db
-from app.schemas.user import PasswordChange, TokenPair, UserMe, UserUpdate
+from app.schemas.user import AccessToken, PasswordChange, UserMe, UserUpdate
 from app.db.models import User
 
 
@@ -65,15 +66,18 @@ def new_password_error(user: User, new_password: str, field: str = "new_password
     return None
 
 
-@router.post("/logout")
-def logout(
-    current_user=Depends(get_current_active_user),
-    db: Session = Depends(get_db),
-):
-    # Révoque l'access token en cours et le refresh token
-    bump_token_version(current_user)
-    db.commit()
-    logger.info("Déconnexion de l'utilisateur %s", current_user.username)
+@router.post("/logout", dependencies=[Depends(require_csrf)])
+def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+    # Par le cookie : marche aussi quand l'access token a expiré
+    refresh_token = read_refresh_cookie(request)
+    payload = decode_access_token(refresh_token) if refresh_token else None
+    if payload and payload.get("type") == "refresh":
+        user = get_user_by_username(db, payload.get("sub") or "")
+        if user and user.refresh_token == refresh_token:
+            bump_token_version(user)   # révoque aussi les access tokens en cours
+            db.commit()
+            logger.info("Déconnexion de l'utilisateur %s", user.username)
+    clear_refresh_cookie(response)
     return {"message": "Déconnexion réussie."}
 
 
@@ -95,10 +99,11 @@ def update_me(
     return UserMe.from_user(user)
 
 
-@router.post("/password/change", response_model=TokenPair)
+@router.post("/password/change", response_model=AccessToken)
 @limiter.limit("5/15minutes")   # vérifie le mot de passe actuel : même protection que /token
 def change_password(
     request: Request,
+    response: Response,
     payload: PasswordChange,
     user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -116,4 +121,4 @@ def change_password(
     set_password(user, payload.new_password)
     db.commit()
     logger.info("Mot de passe changé pour %s", user.username)
-    return issue_tokens(db, user)
+    return issue_session(db, user, response)

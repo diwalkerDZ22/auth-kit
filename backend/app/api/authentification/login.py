@@ -1,17 +1,18 @@
 import logging
 from datetime import datetime, timedelta, timezone
 import secrets
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.cookies import clear_cookie_headers, read_refresh_cookie, require_csrf
 from app.core.email import send_verification_email
 from app.core.errors import ApiError
 from app.core.limiter import limiter
 from app.core.security import decode_access_token
-from app.core.tokens import issue_tokens
+from app.core.tokens import issue_session
 from app.core.verification import create_verification_link, discard_pending_links, hash_token
 from app.crud.user import (
     authenticate_user,
@@ -19,7 +20,7 @@ from app.crud.user import (
 )
 from app.db.base import get_db
 from app.db.models import EmailVerification
-from app.schemas.user import ClaimRequest, RefreshRequest, TokenPair
+from app.schemas.user import AccessToken, ClaimRequest
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 @limiter.limit("10/15minutes")   # anti brute-force du mot de passe
 def login(
     request: Request,
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
@@ -46,7 +48,7 @@ def login(
     # Mode dev : pas d'étape email (Swagger)
     if not settings.LOGIN_EMAIL_REQUIRED:
         logger.info("Étape email de login ignorée pour %s (mode dev)", user.username)
-        return issue_tokens(db, user)
+        return issue_session(db, user, response)
 
     # Anti-spam : un seul email de login par minute
     last = (
@@ -78,31 +80,33 @@ def login(
         },
     )
 
-@router.post("/refresh", response_model=TokenPair)
+@router.post("/refresh", response_model=AccessToken, dependencies=[Depends(require_csrf)])
 @limiter.limit("30/minute")
-def refresh_access_token(request: Request, body: RefreshRequest, db: Session = Depends(get_db)):
-    payload = decode_access_token(body.refresh_token)
+def refresh_access_token(request: Request, response: Response, db: Session = Depends(get_db)):
+    # Le refresh token vient du cookie httpOnly, jamais du corps
+    refresh_token = read_refresh_cookie(request)
+    payload = decode_access_token(refresh_token) if refresh_token else None
     if payload is None or payload.get("type") != "refresh":
-        raise ApiError("invalid_refresh_token")
+        raise ApiError("invalid_refresh_token", headers=clear_cookie_headers())
 
     username = payload.get("sub")
     user = get_user_by_username(db, username)
 
     # Seul le dernier refresh token émis est valable, et sa version doit être à jour
-    if user is None or user.refresh_token != body.refresh_token or payload.get("ver") != user.token_version:
-        raise ApiError("invalid_refresh_token")
+    if user is None or user.refresh_token != refresh_token or payload.get("ver") != user.token_version:
+        raise ApiError("invalid_refresh_token", headers=clear_cookie_headers())
 
     if user.disabled or not user.is_verified:
         logger.info("Refresh refusé à %s : compte désactivé ou non vérifié", user.username)
-        raise ApiError("account_not_allowed")
+        raise ApiError("account_not_allowed", headers=clear_cookie_headers())
 
     logger.info("Refresh des tokens pour %s", user.username)
-    return issue_tokens(db, user)
+    return issue_session(db, user, response)
 
 
 @router.post("/login/claim", response_model=None)
 @limiter.limit("60/minute")   # route interrogée en boucle par la page de login
-def claim_login(request: Request, payload: ClaimRequest, db: Session = Depends(get_db)):
+def claim_login(request: Request, response: Response, payload: ClaimRequest, db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
 
     v = (
@@ -139,4 +143,4 @@ def claim_login(request: Request, payload: ClaimRequest, db: Session = Depends(g
     v.claimed_at = now
     db.commit()
     logger.info("Tokens remis à la page de login de %s", user.username)
-    return issue_tokens(db, user)
+    return issue_session(db, user, response)

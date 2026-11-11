@@ -19,11 +19,17 @@ _TEMPLATES = {
 
 
 def send_verification_email(to: str, verify_url: str, purpose: str) -> bool:
+    subject, intro = _TEMPLATES.get(purpose, _TEMPLATES["signup"])
+
+    if settings.EMAIL_BACKEND == "console":
+        # DEV UNIQUEMENT : seule exception à « pas de token dans les logs »
+        logger.warning("[EMAIL_BACKEND=console] %s | %s %s", subject, intro, verify_url)
+        return True
+
     if not settings.RESEND_API_KEY.strip():
         logger.error("Envoi impossible: RESEND_API_KEY n'est pas configurée dans le fichier .env")
         return False
 
-    subject, intro = _TEMPLATES.get(purpose, _TEMPLATES["signup"])
     safe_url = html.escape(verify_url, quote=True)
     footer = "Si vous n’êtes pas à l’origine de cette demande, ignorez ce mail."
 

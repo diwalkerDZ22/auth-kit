@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,6 +18,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # "console" (dev uniquement) : les mails sont écrits dans les logs au lieu d'être envoyés
+    EMAIL_BACKEND: Literal["resend", "console"] = "resend"
     MAIL_FROM: str = "onboarding@resend.dev"
     MAIL_FROM_NAME: str | None = None   # par défaut : APP_NAME
     SIGNUP_TOKEN_EXPIRE_HOURS: int = 24
@@ -27,6 +31,12 @@ class Settings(BaseSettings):
     # Origines autorisées par CORS ; dans .env au format JSON : ["http://a","http://b"]
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
     LOG_LEVEL: str = "INFO"
+
+    # Cookie httpOnly du refresh token (Sprint 6)
+    REFRESH_COOKIE_NAME: str = "refresh_token"
+    REFRESH_COOKIE_PATH: str = "/"
+    COOKIE_SECURE: bool = True          # false seulement en dev HTTP
+    COOKIE_SAMESITE: Literal["strict", "lax", "none"] = "strict"   # "none" exige COOKIE_SECURE=true
 
     model_config = SettingsConfigDict(env_file=".env")
 

@@ -33,6 +33,7 @@ ERRORS: dict[str, tuple[int, str]] = {
     "invalid_credentials": (401, "Identifiant ou mot de passe incorrect."),
     "login_email_cooldown": (429, "Un email vient d'être envoyé, patientez un instant."),
     "invalid_refresh_token": (401, "Session expirée, reconnectez-vous."),
+    "csrf_missing": (403, "Requête refusée : en-tête de protection CSRF manquant."),
     "account_not_allowed": (403, "Compte non vérifié ou désactivé."),
     "login_attempt_unknown": (410, "Tentative de connexion inconnue ou déjà utilisée."),
     "login_link_expired": (410, "Lien expiré, recommencez la connexion."),

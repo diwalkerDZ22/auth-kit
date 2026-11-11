@@ -1,6 +1,6 @@
 # auth-kit
 
-Module d'authentification réutilisable : backend FastAPI (JWT, rôles et permissions, vérification par email via Resend) et, à venir, frontend React + TypeScript.
+Module d'authentification réutilisable : backend FastAPI (JWT, rôles et permissions, vérification par email via Resend) et frontend React + TypeScript.
 
 Né dans le projet FakeJobApplicationRecognition, puis extrait pour servir de point de départ à d'autres projets.
 
@@ -34,6 +34,18 @@ En dev, `LOGIN_EMAIL_REQUIRED=false` dans `.env` permet de se connecter depuis S
 
 Pour créer un premier admin : inscris-toi, puis donne-lui le rôle `admin` en base (les routes `/admin/*` ne permettent pas de se promouvoir soi-même).
 
+## Démarrer le frontend
+
+```bash
+cd frontend
+npm install
+npm run dev      # http://localhost:5173, /api est relayé vers le backend (port 8000)
+```
+
+Le refresh token est dans un cookie httpOnly : en dev HTTP, mettre `COOKIE_SECURE=false` dans `backend/.env`. Pour tester sans boîte mail, `EMAIL_BACKEND=console` écrit les liens dans les logs du backend.
+
+Le module réutilisable est `frontend/src/auth/` (client API, `AuthProvider`, gardes, pages, `authRoutes`) ; `frontend/src/app/` n'est qu'une coquille de démo.
+
 ## Tests
 
 ```bash
@@ -52,3 +64,5 @@ Les documents de conception (en français) sont dans `docs/` :
 - `Sprint2-Verification-mail.md`
 - `Sprint3-Format-erreurs.md` : format d'erreur et catalogue des codes
 - `Sprint5-Auth-complete.md` : mot de passe oublié, profil, administration, révocation
+- `Sprint6-Frontend.md` : frontend React, cookie httpOnly, CSRF
+- `Journal.md` : historique, opérations sur la base Supabase, points ouverts

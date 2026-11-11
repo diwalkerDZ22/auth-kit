@@ -2,7 +2,7 @@
 import resend
 
 from app.core.limiter import limiter
-from tests.conftest import PASSWORD, bearer, link_token, login, make_user
+from tests.conftest import CSRF, PASSWORD, bearer, link_token, login, make_user
 
 
 def test_inscription_verification_et_connexion(client, outbox):
@@ -52,28 +52,55 @@ def test_conflits_inscription(client):
     assert (r.status_code, r.json()["code"]) == (409, "email_taken")
 
 
-def test_refresh_et_type_de_token(client, outbox):
+def test_refresh_token_uniquement_en_cookie(client, outbox):
     make_user("alice")
     tokens = login(client, outbox)
+    assert set(tokens) == {"access_token", "token_type", "expires_in"}
+    refresh_token = client.cookies.get("refresh_token")
+    assert refresh_token
 
     # Un refresh token ne sert pas d'access token
-    r = client.get("/auth/me", headers={"Authorization": f"Bearer {tokens['refresh_token']}"})
+    r = client.get("/auth/me", headers={"Authorization": f"Bearer {refresh_token}"})
     assert r.json()["code"] == "invalid_token"
 
-    new = client.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]}).json()
-    assert client.get("/auth/me", headers=bearer(new)).status_code == 200
-    # L'ancien refresh token est remplacé
-    r = client.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+
+def test_refresh_par_cookie(client, outbox):
+    make_user("alice")
+    login(client, outbox)
+    old_cookie = client.cookies.get("refresh_token")
+
+    # Sans le header CSRF : refusé
+    r = client.post("/auth/refresh")
+    assert (r.status_code, r.json()["code"]) == (403, "csrf_missing")
+
+    r = client.post("/auth/refresh", headers=CSRF)
+    assert r.status_code == 200
+    assert client.get("/auth/me", headers=bearer(r.json())).status_code == 200
+    assert client.cookies.get("refresh_token") != old_cookie
+
+    # L'ancien cookie est remplacé : refusé, et effacé par la réponse
+    client.cookies.clear()
+    client.cookies.set("refresh_token", old_cookie)
+    r = client.post("/auth/refresh", headers=CSRF)
     assert r.json()["code"] == "invalid_refresh_token"
+    assert "refresh_token=" in r.headers["set-cookie"] and "Max-Age=0" in r.headers["set-cookie"]
+
+
+def test_refresh_sans_cookie(client):
+    r = client.post("/auth/refresh", headers=CSRF)
+    assert (r.status_code, r.json()["code"]) == (401, "invalid_refresh_token")
 
 
 def test_logout_revoque_immediatement(client, outbox):
     make_user("alice")
     tokens = login(client, outbox)
-    assert client.post("/auth/logout", headers=bearer(tokens)).status_code == 200
+    assert client.post("/auth/logout").json()["code"] == "csrf_missing"
+
+    # Pas besoin d'access token : le cookie suffit (marche même s'il a expiré)
+    assert client.post("/auth/logout", headers=CSRF).status_code == 200
+    assert client.cookies.get("refresh_token") is None
     assert client.get("/auth/me", headers=bearer(tokens)).json()["code"] == "invalid_token"
-    r = client.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
-    assert r.json()["code"] == "invalid_refresh_token"
+    assert client.post("/auth/refresh", headers=CSRF).json()["code"] == "invalid_refresh_token"
 
 
 def test_resend_en_panne_au_login(client, outbox, monkeypatch):

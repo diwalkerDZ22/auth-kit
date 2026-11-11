@@ -10,6 +10,7 @@ from app.api.admin import router as admin_router
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from app.core.config import settings
 from app.core.limiter import limiter
 
 
@@ -17,7 +18,7 @@ app = FastAPI(title="JWT Auth FastApi")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["Authorization", "Content-Type"],

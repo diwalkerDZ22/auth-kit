@@ -1,12 +1,13 @@
 import logging
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.email import send_verification_email
+from app.core.limiter import limiter
 from app.core.verification import create_verification_link, hash_token
 from app.crud.user import create_user, get_user_by_email, get_user_by_username
 from app.db.base import get_db
@@ -40,7 +41,9 @@ VERIFY_PAGE = """<!doctype html>
 
 
 @router.post("/register", response_model=UserOut, status_code=201)
+@limiter.limit("5/15minutes")
 def register(
+    request: Request,
     user_in: UserCreate,
     background: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -65,7 +68,8 @@ def register(
     return user
 
 @router.post("/verify")
-def verify(payload: VerifyRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/15minutes")
+def verify(request: Request, payload: VerifyRequest, db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
     verification = (
         db.query(EmailVerification)
@@ -108,7 +112,9 @@ def verify_page():
     return VERIFY_PAGE
 
 @router.post("/resend-verification")
+@limiter.limit("3/15minutes")
 def resend_verification(
+    request: Request,
     payload: ResendRequest,
     background: BackgroundTasks,
     db: Session = Depends(get_db),

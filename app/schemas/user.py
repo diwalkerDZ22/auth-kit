@@ -1,4 +1,9 @@
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
+
+
+def _normalize_email(value: str) -> str:
+    # Une seule forme en base : évite les doublons "A@x.com" / "a@x.com"
+    return value.strip().lower()
 
 
 # --- Token ---
@@ -29,6 +34,8 @@ class ClaimRequest(BaseModel):
 
 class ResendRequest(BaseModel):
     email: EmailStr
+
+    _normalize = field_validator("email", mode="before")(_normalize_email)
 # --- User ---
 
 class UserCreate(BaseModel):
@@ -36,6 +43,8 @@ class UserCreate(BaseModel):
     email: EmailStr
     full_name: str | None = None
     password: str
+
+    _normalize = field_validator("email", mode="before")(_normalize_email)
   
 
 

@@ -23,7 +23,8 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     payload = decode_access_token(credentials.credentials)
-    if payload is None:
+    # Refuse les refresh tokens (et tout autre token) utilisés comme access token
+    if payload is None or payload.get("type") != "access":
         raise credentials_exception
 
     username = payload.get("sub")

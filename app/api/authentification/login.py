@@ -1,13 +1,14 @@
 import logging
 from datetime import datetime, timedelta, timezone
 import secrets
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.email import send_verification_email
+from app.core.limiter import limiter
 from app.core.security import decode_access_token
 from app.core.tokens import issue_tokens
 from app.core.verification import create_verification_link
@@ -25,7 +26,9 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/token", response_model=None)       # plus TokenPair : la réponse change selon le cas
+@limiter.limit("10/15minutes")   # anti brute-force du mot de passe
 def login(
+    request: Request,
     background: BackgroundTasks,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
@@ -79,7 +82,8 @@ def login(
     )
 
 @router.post("/refresh", response_model=TokenPair)
-def refresh_access_token(body: RefreshRequest, db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+def refresh_access_token(request: Request, body: RefreshRequest, db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid refresh token",
@@ -105,7 +109,8 @@ def refresh_access_token(body: RefreshRequest, db: Session = Depends(get_db)):
 from app.core.verification import hash_token
 
 @router.post("/login/claim", response_model=None)
-def claim_login(payload: ClaimRequest, db: Session = Depends(get_db)):
+@limiter.limit("60/minute")   # route interrogée en boucle par la page de login
+def claim_login(request: Request, payload: ClaimRequest, db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
 
     v = (

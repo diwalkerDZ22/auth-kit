@@ -96,13 +96,14 @@ Réponse intermédiaire (succès, mais action attendue) :
 | `account_disabled` | 403 | Compte désactivé |
 | `email_not_verified` | 403 | Inscription pas encore confirmée |
 | `login_email_cooldown` | 429 | Un mail de login a été envoyé il y a moins d’une minute |
+| `rate_limited` | 429 | Trop d'échecs de mot de passe pour ce compte, toutes IP confondues (`LOGIN_FAILURES_PER_ACCOUNT`, Sprint 7) |
 | `login_email_sent` | 202 | Succès : lien envoyé, `attempt_id` fourni |
 
 ### `POST /auth/refresh`
 
 | Code | HTTP | Quand |
 |------|------|-------|
-| `invalid_refresh_token` | 401 | Token invalide, expiré, ou remplacé par un plus récent |
+| `invalid_refresh_token` | 401 | Token inconnu, session fermée ou expirée, ou token remplacé réutilisé après le délai de grâce (la session est alors révoquée, Sprint 7) |
 | `account_not_allowed` | 403 | Compte désactivé ou non vérifié |
 
 ### `POST /auth/login/claim`
@@ -120,8 +121,9 @@ Réponse intermédiaire (succès, mais action attendue) :
 | Code | HTTP | Quand |
 |------|------|-------|
 | `username_taken` | 409 | Username déjà utilisé |
-| `email_taken` | 409 | Email déjà utilisé |
 | `account_exists` | 409 | Conflit détecté par la base (inscriptions simultanées) |
+
+Email déjà inscrit : **pas d'erreur** (Sprint 7). Réponse 201 identique, le titulaire de l'adresse est prévenu par mail.
 
 ### `POST /auth/verify`
 
@@ -129,6 +131,18 @@ Réponse intermédiaire (succès, mais action attendue) :
 |------|------|-------|
 | `invalid_link` | 400 | Lien inconnu, déjà utilisé ou expiré |
 | `account_not_allowed` | 403 | Lien de login pour un compte désactivé ou non vérifié |
+
+### `POST /auth/login/deny` (Sprint 7)
+
+| Code | HTTP | Quand |
+|------|------|-------|
+| `invalid_link` | 400 | Lien de login inconnu, déjà utilisé ou expiré (les liens signup / reset sont refusés) |
+
+### `/auth/sessions` (Sprint 7)
+
+| Code | HTTP | Quand |
+|------|------|-------|
+| `session_not_found` | 404 | `DELETE /auth/sessions/{id}` : session inconnue, déjà fermée ou d'un autre compte |
 
 ### Mot de passe et profil (Sprint 5)
 
@@ -188,7 +202,7 @@ Réponse intermédiaire (succès, mais action attendue) :
 - Refresh token sur `/auth/me` → 401 `invalid_token`
 - Sans header `Authorization` → 401 `not_authenticated`
 - User sans permission → 403 `permission_denied`
-- Register username pris → 409 `username_taken` ; email pris (casse différente) → 409 `email_taken`
+- Register username pris → 409 `username_taken` ; email pris (casse différente) → 201, même corps qu'une inscription réussie (Sprint 7)
 - Register email mal formé → 422 `validation_error` avec `fields.email`
 - `/auth/verify` lien faux → 400 `invalid_link`
 - 11 × `/auth/verify` → 429 `rate_limited`

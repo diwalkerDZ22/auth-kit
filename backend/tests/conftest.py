@@ -1,36 +1,42 @@
 """Fixtures communes.
 
-Les tests tournent sur une base SQLite temporaire (jamais sur la base du .env)
-et interceptent l'envoi Resend : aucun vrai email ne part.
+Les tests montent le kit dans une application de test, comme le ferait un projet :
+base SQLite temporaire, mails en mémoire (MemoryEmailSender), rate-limit coupé par défaut.
 """
 import os
 import re
 import tempfile
 from datetime import datetime, timedelta, timezone
 
-# Avant tout import de app.* : ces variables d'environnement l'emportent sur le .env
-_DB_PATH = os.path.join(tempfile.mkdtemp(prefix="auth-kit-tests-"), "test.db")
-os.environ.update({
-    "DATABASE_URL": f"sqlite:///{_DB_PATH}",
-    "SECRET_KEY": "cle-de-test-uniquement-pour-pytest-0123456789",
-    "RESEND_API_KEY": "re_test",
-    "LOGIN_EMAIL_REQUIRED": "true",
-    "COOKIE_SECURE": "false",   # le TestClient parle en HTTP : un cookie Secure ne serait pas renvoyé
-    "LOG_LEVEL": "WARNING",
-})
-
 import pytest
-import resend
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
 
-from app.core.limiter import limiter
-from app.core.security import get_password_hash
-from app.db.base import Base, SessionLocal, engine
-from app.db.models import EmailVerification, Permission, Role, User
-from app.main import app
+from auth_kit import AuthKit, AuthSettings
+from auth_kit.adapters import LimitsRateLimiter, MemoryEmailSender
+from auth_kit.db import create_engine_from_url, session_dependency
+from auth_kit.models import Base, EmailVerification, Role, User
+from auth_kit.security import get_password_hash
 
 PASSWORD = "cheval-batterie-agrafe"
 CSRF = {"X-CSRF-Protection": "1"}
+
+_DB_PATH = os.path.join(tempfile.mkdtemp(prefix="auth-kit-tests-"), "test.db")
+engine = create_engine_from_url(f"sqlite:///{_DB_PATH}")
+SessionLocal = sessionmaker(bind=engine, autoflush=False)
+
+settings = AuthSettings(
+    secret_key="cle-de-test-uniquement-pour-pytest-0123456789",
+    login_email_required=True,
+    cookie_secure=False,   # le TestClient parle en HTTP : un cookie Secure ne serait pas renvoyé
+)
+email_sender = MemoryEmailSender()
+limiter = LimitsRateLimiter("memory://", enabled=False)
+kit = AuthKit(settings=settings, get_db=session_dependency(SessionLocal), email=email_sender, rate_limiter=limiter)
+
+app = FastAPI()
+kit.install(app)
 
 
 @pytest.fixture(autouse=True)
@@ -39,19 +45,14 @@ def database():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     db = SessionLocal()
-    manage = Permission(code="users:manage", description="Gérer les utilisateurs")
-    db.add_all([
-        Role(name="user", description="Utilisateur standard", permissions=[]),
-        Role(name="admin", description="Administrateur", permissions=[manage]),
-    ])
-    db.commit()
+    kit.seed_roles(db)
     db.close()
     yield
 
 
 @pytest.fixture(autouse=True)
 def no_rate_limit():
-    """Rate-limit coupé par défaut ; un test peut le réactiver."""
+    """Rate-limit coupé par défaut ; un test peut le réactiver (limiter.enabled = True)."""
     limiter.reset()
     limiter.enabled = False
     yield
@@ -59,11 +60,12 @@ def no_rate_limit():
 
 
 @pytest.fixture(autouse=True)
-def outbox(monkeypatch):
-    """Remplace l'envoi Resend : les mails sont stockés dans une liste."""
-    sent: list[dict] = []
-    monkeypatch.setattr(resend.Emails, "send", lambda params: sent.append(params) or {"id": "test"})
-    return sent
+def outbox():
+    """Mails « envoyés » pendant le test."""
+    email_sender.outbox.clear()
+    email_sender.fail = False
+    yield email_sender.outbox
+    email_sender.fail = False
 
 
 @pytest.fixture
@@ -96,9 +98,9 @@ def make_user(username="alice", email=None, password=PASSWORD, role="user", veri
     return user_id
 
 
-def link_token(outbox: list[dict]) -> str:
+def link_token(outbox) -> str:
     """Token du dernier lien envoyé par email."""
-    match = re.search(r"token=([A-Za-z0-9_-]+)", outbox[-1]["text"])
+    match = re.search(r"token=([A-Za-z0-9_-]+)", outbox[-1].text)
     assert match, "aucun lien dans le dernier mail"
     return match.group(1)
 

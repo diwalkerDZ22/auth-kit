@@ -1,14 +1,11 @@
 """Inscription, vérification, connexion par email, tokens, révocation."""
-import resend
-
-from app.core.limiter import limiter
-from tests.conftest import CSRF, PASSWORD, bearer, link_token, login, make_user
+from tests.conftest import CSRF, PASSWORD, bearer, email_sender, limiter, link_token, login, make_user
 
 
 def test_inscription_verification_et_connexion(client, outbox):
     r = client.post("/auth/register", json={"username": "alice", "email": "Alice@Example.com", "password": PASSWORD})
-    assert r.status_code == 201
-    assert r.json()["email"] == "alice@example.com" and r.json()["is_verified"] is False
+    assert r.status_code == 201 and "message" in r.json()
+    assert outbox[-1].to == "alice@example.com"   # email normalisé
 
     # Connexion refusée tant que l'email n'est pas vérifié
     r = client.post("/auth/token", data={"username": "alice", "password": PASSWORD})
@@ -44,12 +41,21 @@ def test_regles_inscription(client):
         assert champ in r.json()["fields"], (body, r.json())
 
 
-def test_conflits_inscription(client):
+def test_conflits_inscription(client, outbox, db):
+    from auth_kit.models import User
+
     make_user("alice")
     r = client.post("/auth/register", json={"username": "alice", "email": "autre@example.com", "password": PASSWORD})
     assert (r.status_code, r.json()["code"]) == (409, "username_taken")
-    r = client.post("/auth/register", json={"username": "bob", "email": "ALICE@example.com", "password": PASSWORD})
-    assert (r.status_code, r.json()["code"]) == (409, "email_taken")
+
+    # Email déjà inscrit : même réponse qu'une inscription réussie, aucun compte créé,
+    # et le titulaire de l'adresse est prévenu (sans lien d'activation)
+    libre = client.post("/auth/register", json={"username": "carole", "email": "carole@example.com", "password": PASSWORD})
+    pris = client.post("/auth/register", json={"username": "bob", "email": "ALICE@example.com", "password": PASSWORD})
+    assert (pris.status_code, pris.json()) == (libre.status_code, libre.json())
+    assert db.query(User).filter(User.username == "bob").first() is None
+    assert outbox[-1].to == "alice@example.com" and outbox[-1].purpose == "account_exists"
+    assert "token=" not in outbox[-1].text
 
 
 def test_refresh_token_uniquement_en_cookie(client, outbox):
@@ -78,7 +84,15 @@ def test_refresh_par_cookie(client, outbox):
     assert client.get("/auth/me", headers=bearer(r.json())).status_code == 200
     assert client.cookies.get("refresh_token") != old_cookie
 
-    # L'ancien cookie est remplacé : refusé, et effacé par la réponse
+    # L'ancien cookie est remplacé : refusé (une fois le délai de grâce passé), et effacé par la réponse
+    from datetime import datetime, timedelta, timezone
+    from auth_kit.models import UserSession
+    from tests.conftest import SessionLocal
+
+    db = SessionLocal()
+    db.query(UserSession).update({"rotated_at": datetime.now(timezone.utc) - timedelta(minutes=5)})
+    db.commit()
+    db.close()
     client.cookies.clear()
     client.cookies.set("refresh_token", old_cookie)
     r = client.post("/auth/refresh", headers=CSRF)
@@ -103,19 +117,15 @@ def test_logout_revoque_immediatement(client, outbox):
     assert client.post("/auth/refresh", headers=CSRF).json()["code"] == "invalid_refresh_token"
 
 
-def test_resend_en_panne_au_login(client, outbox, monkeypatch):
+def test_resend_en_panne_au_login(client, outbox):
     make_user("alice")
-
-    def panne(params):
-        raise RuntimeError("Resend indisponible")
-
-    monkeypatch.setattr(resend.Emails, "send", panne)
+    email_sender.fail = True
     r = client.post("/auth/token", data={"username": "alice", "password": PASSWORD})
     assert (r.status_code, r.json()["code"]) == (503, "email_unavailable")
     assert "attempt_id" not in r.json()
 
     # Le mail raté ne compte pas pour l'anti-spam : on peut réessayer tout de suite
-    monkeypatch.setattr(resend.Emails, "send", lambda params: outbox.append(params) or {"id": "test"})
+    email_sender.fail = False
     assert client.post("/auth/token", data={"username": "alice", "password": PASSWORD}).status_code == 202
 
 

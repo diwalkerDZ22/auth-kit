@@ -1,5 +1,5 @@
 """Profil et administration."""
-from app.crud.user import count_active_admins
+from auth_kit.services.admin import count_active_admins
 from tests.conftest import PASSWORD, bearer, login, make_user
 
 

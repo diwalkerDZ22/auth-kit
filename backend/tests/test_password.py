@@ -16,7 +16,7 @@ def test_reset_de_bout_en_bout(client, outbox):
 
     message = client.post("/auth/password/forgot", json={"email": "ALICE@example.com"}).json()["message"]
     assert "Si un compte existe" in message
-    assert "/reset-password?token=" in outbox[-1]["text"]
+    assert "/reset-password?token=" in outbox[-1].text
     token = link_token(outbox)
 
     # Mot de passe refusé : le lien reste utilisable
@@ -38,7 +38,7 @@ def test_reset_de_bout_en_bout(client, outbox):
 
 
 def test_reset_verifie_le_compte(client, outbox, db):
-    from app.db.models import User
+    from auth_kit.models import User
 
     make_user("alice", verified=False)
     client.post("/auth/password/forgot", json={"email": "alice@example.com"})

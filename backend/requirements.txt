@@ -1,14 +1,19 @@
-fastapi
-uvicorn[standard]
-sqlalchemy<2.1
-psycopg[binary]>=3.2,<4
-python-jose[cryptography]
-passlib[bcrypt]
-bcrypt==4.0.1
-python-dotenv
-python-multipart
-pydantic-settings
-email-validator
-alembic
-resend
-slowapi
+# Versions exactes pour l'application de démo et les tests (installations reproductibles).
+# La bibliothèque elle-même déclare des bornes larges dans pyproject.toml.
+fastapi==0.162.0
+starlette==1.10.0
+uvicorn[standard]==0.54.0
+sqlalchemy==2.0.46
+psycopg[binary]==3.3.6
+pyjwt==2.15.1
+bcrypt==5.0.0
+python-dotenv==1.2.4
+python-multipart==0.0.33
+pydantic==2.14.2
+pydantic-settings==2.16.2
+email-validator==2.3.0
+alembic==1.20.1
+resend==2.50.1
+limits==5.8.0
+# Le kit lui-même, en mode éditable (commande auth-kit, import auth_kit)
+-e .

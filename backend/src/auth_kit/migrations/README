@@ -1,0 +1,7 @@
+Migrations des tables du kit (branche Alembic "auth_kit").
+
+Seules (application de démo, base dédiée au kit), depuis backend/ :
+    alembic upgrade head
+
+Dans un projet qui a ses propres migrations : voir docs/Bibliotheque.md
+(ajouter le dossier renvoyé par `auth-kit migrations-path` à version_locations).
